@@ -1,5 +1,5 @@
 train: dataset/train/images
 val: dataset/val/images
 
-nc: 
-names: []
+nc: 11
+names: ["beam","column","crane", "lift car", "person","ring clurch","slab","stair","trailer","upright","wall"]
