@@ -7,7 +7,7 @@ colunas_ifc = ifc_file.by_type("IfcColumn")
 total_colunas_ifc = len(colunas_ifc)
 
 # === 2. Rodar YOLO na foto ===
-image_path = "canteiro-de-obras.jpg"
+image_path = "36753592-building-concrete-column-in-construction-site.jpg"
 model = YOLO("meu_modelo_yolo/content/runs/detect/train/weights/best.pt")
 
 results = model(image_path, save=True, project="resultados", name="deteccao", exist_ok=True)
