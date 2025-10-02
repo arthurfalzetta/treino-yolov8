@@ -1,3 +1,2 @@
+ifcopenshell
 ultralytics
-opencv-python
-pandas

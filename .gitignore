@@ -1,11 +1,2 @@
-__pycache__/
-*.pyc
-
-runs/
+.venv/
 resultados/
-novas_imagens/
-
-*.pt
-
-venv/
-.env/
