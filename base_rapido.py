@@ -1,3 +1,4 @@
+import datetime
 import os
 import csv
 import json
@@ -5,18 +6,19 @@ import ifcopenshell
 import boto3
 from inference_sdk import InferenceHTTPClient
 from dotenv import load_dotenv
-import os
+from concurrent.futures import ThreadPoolExecutor
 
-load_dotenv() # Carrega variáveis de ambiente do arquivo .env
+load_dotenv()  # Carrega variáveis de ambiente do arquivo .env
 
 # === 1. Configurações S3 ===
 S3_ENDPOINT = os.getenv("S3_ENDPOINT")
 S3_BUCKET = os.getenv("S3_BUCKET")
 IFC_KEY = os.getenv("IFC_KEY")
 IMAGES_PREFIX = os.getenv("IMAGES_PREFIX")
-S3_KEY=os.getenv("S3_KEY")
-S3_SECRET=os.getenv("S3_SECRET")
-ROBOFLOW_KEY=os.getenv("ROBOFLOW_KEY")
+S3_KEY = os.getenv("S3_KEY")
+S3_SECRET = os.getenv("S3_SECRET")
+ROBOFLOW_KEY = os.getenv("ROBOFLOW_KEY")
+
 # boto3 client para S3 compatível
 s3 = boto3.client(
     "s3",
@@ -46,23 +48,31 @@ client = InferenceHTTPClient(
 
 # === 4. Listar imagens no S3 ===
 image_objs = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=IMAGES_PREFIX)
-image_keys = sorted([obj['Key'] for obj in image_objs.get('Contents', []) if obj['Key'].lower().endswith(('.jpg','.png','.jpeg'))])
+image_keys = sorted([
+    obj['Key'] 
+    for obj in image_objs.get('Contents', []) 
+    if obj['Key'].lower().endswith(('.jpg', '.png', '.jpeg'))
+])
 
-# Baixar imagens para /tmp e criar paths
-image_paths = []
-for key in image_keys:
+# Função para baixar uma imagem do S3 para /tmp
+def download_image(key):
     img_obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
     img_data = img_obj["Body"].read()
     tmp_path = f"/tmp/{os.path.basename(key)}"
     with open(tmp_path, "wb") as f:
         f.write(img_data)
-    image_paths.append(tmp_path)
+    return tmp_path
+
+# Baixar imagens em paralelo
+with ThreadPoolExecutor(max_workers=8) as executor:  # ajuste max_workers se precisar
+    image_paths = list(executor.map(download_image, image_keys))
 
 print(f"🔎 Processando {len(image_paths)} imagens de uma vez...")
 
 # === 5. Rodar workflow Roboflow ===
 colunas_detectadas_list = []
 
+agora = datetime.datetime.now()
 try:
     results = client.run_workflow(
         workspace_name="pi-eeksi",
@@ -81,6 +91,7 @@ try:
 except Exception as e:
     print(f"⚠️ Erro geral na API: {e}")
     results = [{}] * len(image_paths)
+fim = datetime.datetime.now()
 
 # === 6. Criar CSV no /tmp ===
 csv_file = "/tmp/resultado_colunas.csv"
@@ -100,3 +111,5 @@ with open(csv_file, mode="w", newline="") as f:
 s3.upload_file(csv_file, S3_BUCKET, "resultados/resultado_colunas.csv")
 
 print("\n✅ Processamento concluído! CSV salvo em S3 em 'resultados/resultado_colunas.csv'")
+duracao = fim - agora
+print(f"⏱ Duração total: {duracao}")

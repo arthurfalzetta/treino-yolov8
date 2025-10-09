@@ -1,4 +1,4 @@
-dotenv
-inference_sdk
 boto3
 ifcopenshell
+inference_sdk
+python-dotenv
