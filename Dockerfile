@@ -1,15 +1,41 @@
-FROM continuumio/miniconda3
+# FROM python:3.10-slim
 
-# Criar ambiente
-RUN conda create -n py311 python=3.11
-SHELL ["conda", "run", "-n", "py311", "/bin/bash", "-c"]
+# RUN apt-get update && apt-get install -y \
+#     git build-essential python3-dev libgl1 libglib2.0-0 \
+#     && rm -rf /var/lib/apt/lists/*
 
-# Instalar ifcopenshell via conda-forge
-RUN conda install -c conda-forge ifcopenshell boto3 python-dotenv -y
+# WORKDIR /app
+# COPY . /app
 
-# Copiar código
-COPY app.py /app/app.py
+# RUN pip install --no-cache-dir -r requirements.txt \
+#     && pip install flask
+
+# ENV PYTHONUNBUFFERED=1
+
+# # Use string simples para o Render
+# CMD python servidor.py
+
+# Imagem base própria da Lambda
+# Usa o runtime oficial da AWS Lambda para Python 3.10
+# Base oficial da AWS Lambda para Python 3.10
+FROM python:3.10-slim
+
+# Instala dependências do sistema (necessárias para ifcopenshell e cv2)
+RUN apt-get update && apt-get install -y \
+    git build-essential python3-dev libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
+COPY . /app
 
-# Rodar Lambda Python runtime
-CMD ["app.handler"]
+# Instala dependências Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Instala o runtime da Lambda (para rodar como container Lambda)
+RUN pip install awslambdaric
+
+# Define o handler principal (ex: app.handler)
+CMD ["python3", "-m", "awslambdaric", "app.handler"]
+
+
+
