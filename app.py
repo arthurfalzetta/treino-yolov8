@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from concurrent.futures import ThreadPoolExecutor
 
-# Carrega credenciais S3/Roboflow do ambiente
 load_dotenv()
 
 app = Flask(__name__)
@@ -22,19 +21,16 @@ def run():
         IFC_KEY = data.get("ifc_key")
         IMAGES_PREFIX = data.get("images_prefix")
 
-        if not IFC_KEY:
-            return jsonify({"error": "Parâmetro 'ifc_key' obrigatório"}), 400
-        if not IMAGES_PREFIX:
-            return jsonify({"error": "Parâmetro 'images_prefix' obrigatório"}), 400
+        if not IFC_KEY or not IMAGES_PREFIX:
+            return jsonify({"error": "Parâmetros 'ifc_key' e 'images_prefix' obrigatórios"}), 400
 
-        # Credenciais S3 e Roboflow
+        # Credenciais S3/Roboflow
         S3_ENDPOINT = os.getenv("S3_ENDPOINT")
         S3_BUCKET = os.getenv("S3_BUCKET")
         S3_KEY = os.getenv("S3_KEY")
         S3_SECRET = os.getenv("S3_SECRET")
         ROBOFLOW_KEY = os.getenv("ROBOFLOW_KEY")
 
-        # Cliente S3
         s3 = boto3.client(
             "s3",
             endpoint_url=S3_ENDPOINT,
@@ -42,7 +38,7 @@ def run():
             aws_secret_access_key=S3_SECRET
         )
 
-        # === Baixar IFC ===
+        # Baixar IFC
         ifc_obj = s3.get_object(Bucket=S3_BUCKET, Key=IFC_KEY)
         ifc_path = "/tmp/temp.ifc"
         with open(ifc_path, "wb") as f:
@@ -53,13 +49,13 @@ def run():
         total_colunas_ifc = len(colunas_ifc)
         print(f"🏗️ Total de colunas no IFC: {total_colunas_ifc}")
 
-        # Roboflow
+        # Roboflow client
         client = InferenceHTTPClient(
             api_url="https://serverless.roboflow.com",
             api_key=ROBOFLOW_KEY
         )
 
-        # === Listar imagens via prefixo dinâmico ===
+        # Listar imagens S3
         objs = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=IMAGES_PREFIX)
         image_keys = sorted([
             obj['Key'] for obj in objs.get('Contents', [])
@@ -67,7 +63,7 @@ def run():
         ])
         print(f"🖼️ {len(image_keys)} imagens encontradas")
 
-        # Função para baixar imagem
+        # Baixar imagens para /tmp em paralelo
         def download_image(key):
             obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
             tmp_path = f"/tmp/{os.path.basename(key)}"
@@ -75,43 +71,46 @@ def run():
                 f.write(obj["Body"].read())
             return tmp_path
 
-        # Baixar imagens em paralelo
         with ThreadPoolExecutor(max_workers=8) as executor:
             image_paths = list(executor.map(download_image, image_keys))
 
-        results = []
+        print(f"🔎 Processando {len(image_paths)} imagens no Roboflow...")
 
-        # Processar imagens Roboflow
-        for path, key in zip(image_paths, image_keys):
-            try:
-                r = client.run_workflow(
-                    workspace_name="pi-eeksi",
-                    workflow_id="detect-count-and-visualize",
-                    images={"image": path},
-                    use_cache=True
-                )
-                if isinstance(r, str):
-                    r = json.loads(r)
-            except Exception as e:
-                print(f"⚠️ Erro Roboflow {key}: {e}")
-                r = {"count_objects": 0}
+        # Rodar workflow enviando **todos os paths de uma vez**
+        try:
+            results = client.run_workflow(
+                workspace_name="pi-eeksi",
+                workflow_id="detect-count-and-visualize",
+                images={"image": image_paths},  # lista de paths
+                use_cache=True
+            )
 
-            results.append({"key": key, "result": r})
+            # Normalizar resultados
+            if isinstance(results, str):
+                results = json.loads(results)
+            elif isinstance(results, list):
+                for i in range(len(results)):
+                    if isinstance(results[i], str):
+                        results[i] = json.loads(results[i])
+
+        except Exception as e:
+            print(f"⚠️ Erro Roboflow: {e}")
+            results = [{}] * len(image_paths)
 
         # Criar CSV
         csv_path = "/tmp/resultado_colunas.csv"
         with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["imagem", "colunas_detectadas", "percentual_ifc"])
-            for item in results:
-                key = item["key"]
-                r = item["result"]
-                colunas_detectadas = r.get("count_objects", 0) if isinstance(r, dict) else 0
+            for img_path, r in zip(image_paths, results):
+                if not isinstance(r, dict):
+                    r = {}
+                colunas_detectadas = r.get("count_objects", 0)
                 percentual = (colunas_detectadas / total_colunas_ifc) * 100 if total_colunas_ifc > 0 else 0
-                writer.writerow([key, colunas_detectadas, round(percentual, 2)])
-                print(f"📊 {key}: {colunas_detectadas} colunas ({round(percentual,2)}%)")
+                writer.writerow([img_path, colunas_detectadas, round(percentual, 2)])
+                print(f"📊 {img_path}: {colunas_detectadas} colunas ({round(percentual,2)}%)")
 
-        # Subir CSV pro S3
+        # Subir CSV S3
         s3.upload_file(csv_path, S3_BUCKET, "resultados/resultado_colunas.csv")
 
         duracao = datetime.datetime.now() - inicio
