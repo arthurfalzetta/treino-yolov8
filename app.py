@@ -10,7 +10,6 @@ from flask import Flask, request, jsonify
 from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
-
 app = Flask(__name__)
 
 @app.route("/run", methods=["POST"])
@@ -20,11 +19,14 @@ def run():
         data = request.get_json(force=True)
         IFC_KEY = data.get("ifc_key")
         IMAGES_PREFIX = data.get("images_prefix")
+        IMAGE_KEYS = data.get("image_keys")  # lista opcional de keys
 
-        if not IFC_KEY or not IMAGES_PREFIX:
-            return jsonify({"error": "Parâmetros 'ifc_key' e 'images_prefix' obrigatórios"}), 400
+        if not IFC_KEY:
+            return jsonify({"error": "Parâmetro 'ifc_key' obrigatório"}), 400
+        if not IMAGES_PREFIX and not IMAGE_KEYS:
+            return jsonify({"error": "Informe 'images_prefix' ou 'image_keys'"}), 400
 
-        # Credenciais S3/Roboflow
+        # Credenciais
         S3_ENDPOINT = os.getenv("S3_ENDPOINT")
         S3_BUCKET = os.getenv("S3_BUCKET")
         S3_KEY = os.getenv("S3_KEY")
@@ -38,7 +40,7 @@ def run():
             aws_secret_access_key=S3_SECRET
         )
 
-        # Baixar IFC
+        # === Baixar IFC ===
         ifc_obj = s3.get_object(Bucket=S3_BUCKET, Key=IFC_KEY)
         ifc_path = "/tmp/temp.ifc"
         with open(ifc_path, "wb") as f:
@@ -55,13 +57,16 @@ def run():
             api_key=ROBOFLOW_KEY
         )
 
-        # Listar imagens S3
-        objs = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=IMAGES_PREFIX)
-        image_keys = sorted([
-            obj['Key'] for obj in objs.get('Contents', [])
-            if obj['Key'].lower().endswith(('.jpg', '.jpeg', '.png'))
-        ])
-        print(f"🖼️ {len(image_keys)} imagens encontradas")
+        # === Definir keys de imagens ===
+        if IMAGE_KEYS:
+            image_keys = IMAGE_KEYS
+        else:
+            objs = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=IMAGES_PREFIX)
+            image_keys = sorted([
+                obj['Key'] for obj in objs.get('Contents', [])
+                if obj['Key'].lower().endswith(('.jpg', '.jpeg', '.png'))
+            ])
+        print(f"🖼️ {len(image_keys)} imagens selecionadas")
 
         # Baixar imagens para /tmp em paralelo
         def download_image(key):
@@ -76,12 +81,12 @@ def run():
 
         print(f"🔎 Processando {len(image_paths)} imagens no Roboflow...")
 
-        # Rodar workflow enviando **todos os paths de uma vez**
+        # Rodar workflow com todos os paths
         try:
             results = client.run_workflow(
                 workspace_name="pi-eeksi",
                 workflow_id="detect-count-and-visualize",
-                images={"image": image_paths},  # lista de paths
+                images={"image": image_paths},
                 use_cache=True
             )
 
@@ -92,7 +97,6 @@ def run():
                 for i in range(len(results)):
                     if isinstance(results[i], str):
                         results[i] = json.loads(results[i])
-
         except Exception as e:
             print(f"⚠️ Erro Roboflow: {e}")
             results = [{}] * len(image_paths)
