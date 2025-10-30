@@ -103,6 +103,7 @@ def run():
 
         # Criar CSV
         csv_path = "/tmp/resultado_colunas.csv"
+        soma_percentuais = 0  # Acumulador para a soma das porcentagens
         with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["imagem", "colunas_detectadas", "percentual_ifc"])
@@ -111,6 +112,7 @@ def run():
                     r = {}
                 colunas_detectadas = r.get("count_objects", 0)
                 percentual = (colunas_detectadas / total_colunas_ifc) * 100 if total_colunas_ifc > 0 else 0
+                soma_percentuais += percentual  # Soma os percentuais
                 writer.writerow([img_path, colunas_detectadas, round(percentual, 2)])
                 print(f"📊 {img_path}: {colunas_detectadas} colunas ({round(percentual,2)}%)")
 
@@ -123,7 +125,8 @@ def run():
         return jsonify({
             "mensagem": "Processamento concluído",
             "csv": "resultados/resultado_colunas.csv",
-            "duracao": str(duracao)
+            "duracao": str(duracao),
+            "soma_percentuais": round(soma_percentuais, 2)  # Retorna a soma das porcentagens
         })
 
     except Exception as e:
