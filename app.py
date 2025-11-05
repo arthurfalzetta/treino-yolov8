@@ -8,6 +8,8 @@ from inference_sdk import InferenceHTTPClient
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from concurrent.futures import ThreadPoolExecutor
+from supabase import create_client, Client
+
 
 load_dotenv()
 app = Flask(__name__)
@@ -122,12 +124,19 @@ def run():
         duracao = datetime.datetime.now() - inicio
         print(f"🚀 Concluído em {duracao}")
 
-        return jsonify({
+        # Salvar resultado no Supabase
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        resultado_json = {
             "mensagem": "Processamento concluído",
             "csv": "resultados/resultado_colunas.csv",
             "duracao": str(duracao),
-            "soma_percentuais": round(soma_percentuais, 2)  # Retorna a soma das porcentagens
-        })
+            "soma_percentuais": round(soma_percentuais, 2)
+        }
+        supabase.table("resultados").insert({"resultado": json.dumps(resultado_json)}).execute()
+
+        return jsonify(resultado_json)
 
     except Exception as e:
         print(f"❌ Erro geral: {e}")
