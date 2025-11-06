@@ -128,13 +128,14 @@ def run():
         SUPABASE_URL = os.getenv("SUPABASE_URL")
         SUPABASE_KEY = os.getenv("SUPABASE_KEY")
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        supabase.table("resultados").insert({"resultado": round(soma_percentuais, 2)}).execute()
+        soma_percentuais_float = float(soma_percentuais)
+        supabase.table("resultados").insert({"resultado": soma_percentuais_float}).execute()
 
         resultado_json = {
             "mensagem": "Processamento concluído",
             "csv": "resultados/resultado_colunas.csv",
             "duracao": str(duracao),
-            "soma_percentuais": round(soma_percentuais, 2)
+            "soma_percentuais": soma_percentuais_float
         }
 
         return jsonify(resultado_json)
