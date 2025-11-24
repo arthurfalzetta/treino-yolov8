@@ -123,13 +123,7 @@ def run():
 
         duracao = datetime.datetime.now() - inicio
         print(f"🚀 Concluído em {duracao}")
-
-        # Salvar resultado no Supabase
-        SUPABASE_URL = os.getenv("SUPABASE_URL")
-        SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         soma_percentuais_float = float(soma_percentuais)
-        supabase.table("resultados").insert({"resultado": soma_percentuais_float}).execute()
 
         resultado_json = {
             "mensagem": "Processamento concluído",
